@@ -99,13 +99,13 @@ jobs:
         run: |
           cmake -S . -B build `
             -DVIDEO2X_USE_EXTERNAL_NCNN=OFF -DVIDEO2X_USE_EXTERNAL_SPDLOG=OFF -DVIDEO2X_USE_EXTERNAL_BOOST=OFF `
-            -DCMAKE_BUILD_TYPE=Debug -DCMAKE_INSTALL_PREFIX=build/video2x_install
-          cmake --build build --config Debug --parallel --target install
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=build/video2x_install
+          cmake --build build --config Release --parallel --target install
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: video2x-nightly-windows-amd64
+          name: video2x-dq8-windows-amd64-release
           path: build/video2x_install
 
   container:

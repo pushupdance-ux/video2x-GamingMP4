@@ -136,7 +136,10 @@ int parse_args(
             ("scaling-factor,s", po::value<int>(&proc_cfg.scaling_factor)
                 ->notifier([](int v) { validate_min(v, "scaling-factor", 2); }), "Scaling factor")
             ("noise-level,n", po::value<int>(&proc_cfg.noise_level)
-                ->notifier([](int v) { validate_min(v, "noise-level", -1); }), "Noise level")
+                ->notifier([](int v) { validate_range(v, "noise-level", -1, 3); }),
+                "Noise level (Real-CUGAN: -1 = conservative, 0 = no denoise, 1-3 = denoise)")
+            ("tta", po::bool_switch(), "Enable test-time augmentation for Real-ESRGAN/Real-CUGAN "
+                "(averages 8 flipped/rotated passes; ~8x slower, steadier and less hallucination)")
         ;
 
         po::options_description interp_opts("Frame interpolation options");
@@ -406,7 +409,7 @@ int parse_args(
 
                 proc_cfg.processor_type = video2x::processors::ProcessorType::RealESRGAN;
                 video2x::processors::RealESRGANConfig realesrgan_config;
-                realesrgan_config.tta_mode = false;
+                realesrgan_config.tta_mode = vm["tta"].as<bool>();
                 realesrgan_config.model_name =
                     vm["realesrgan-model"].as<video2x::fsutils::StringType>();
                 proc_cfg.config = realesrgan_config;
@@ -445,7 +448,7 @@ int parse_args(
 
                 proc_cfg.processor_type = video2x::processors::ProcessorType::RealCUGAN;
                 video2x::processors::RealCUGANConfig realcugan_config;
-                realcugan_config.tta_mode = false;
+                realcugan_config.tta_mode = vm["tta"].as<bool>();
                 realcugan_config.model_name =
                     vm["realcugan-model"].as<video2x::fsutils::StringType>();
                 realcugan_config.num_threads = vm["realcugan-threads"].as<int>();

@@ -126,8 +126,10 @@ int InterpolatorRIFE::interpolate(
         return ret;
     }
 
-    // Convert ncnn::Mat to AVFrame
-    *out_frame = conversions::ncnn_mat_to_avframe(out_mat, out_pix_fmt_);
+    // Convert ncnn::Mat to AVFrame (keep the source's color matrix and range)
+    *out_frame = conversions::ncnn_mat_to_avframe(
+        out_mat, out_pix_fmt_, in_frame->colorspace, in_frame->color_range
+    );
     if (*out_frame == nullptr) {
         logger()->error("Failed to convert ncnn::Mat to AVFrame");
         return AVERROR(ENOMEM);

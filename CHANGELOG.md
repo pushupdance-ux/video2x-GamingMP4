@@ -12,13 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Option to recalculate the PTS.
 - Real-ESRGAN models `realesr-general-x4v3` and `realesr-general-wdn-x4v3` (#1319).
 - (Video2X Qt6) Korean translation.
+- `--tta` option to enable test-time augmentation for Real-ESRGAN and Real-CUGAN.
+- Custom Real-ESRGAN / Real-CUGAN ncnn models can be used by name (no fixed whitelist).
 
 ### Changed
 
 - Separate audio and subtitle stream copying options.
+- Real-ESRGAN and Real-CUGAN tile sizes now scale with available VRAM; small inputs
+  (e.g. 512x448) are processed as a single tile on large GPUs (no seams, less overhead).
+- YUV <-> RGB conversions cache their swscale contexts, use accurate rounding and full
+  chroma interpolation, honour the frame's color matrix/range, and skip an extra copy.
 
 ### Fixed
 
+- `--realcugan-syncgap` was never applied (the RealCUGAN member was left uninitialized).
 - Null pointer dereference in Real-ESRGAN, Real-CUGAN, and RIFE processors when frame conversion fails.
 - Vulkan hardware device context leak on error paths in libplacebo filter initialization.
 - Incorrect spdlog format string using printf-style specifiers instead of fmt-style placeholders.

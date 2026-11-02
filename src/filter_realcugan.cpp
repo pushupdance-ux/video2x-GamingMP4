@@ -1,5 +1,7 @@
 #include "filter_realcugan.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -105,6 +107,11 @@ int FilterRealcugan::init(AVCodecContext* dec_ctx, AVCodecContext* enc_ctx, AVBu
     realcugan_->noise = noise_level_;
     realcugan_->prepadding = 10;
 
+    // FIX: the syncgap value was stored but never handed to the RealCUGAN instance, whose
+    // constructor leaves the member uninitialized, so the --realcugan-syncgap option had no
+    // defined effect. Pass it through explicitly.
+    realcugan_->syncgap = syncgap_;
+
     // Set prepadding based on scaling factor
     if (scaling_factor_ == 2) {
         realcugan_->prepadding = 18;
@@ -158,6 +165,36 @@ int FilterRealcugan::init(AVCodecContext* dec_ctx, AVCodecContext* enc_ctx, AVBu
         }
     }
 
+    // OPTIMIZATION: on GPUs with plenty of VRAM, grow the tile beyond the 400 px cap. Memory
+    // grows with tile area, so scale from the largest tier above. When one tile covers the
+    // whole frame, the image is processed in a single pass: no tile seams, no syncgap
+    // approximation (the model's exact output) and less padding overhead.
+    {
+        uint32_t top_tier_budget = 0;
+        if (scaling_factor_ == 2) {
+            top_tier_budget = 1300;
+        } else if (scaling_factor_ == 3) {
+            top_tier_budget = 3300;
+        } else if (scaling_factor_ == 4) {
+            top_tier_budget = 1690;
+        }
+        if (top_tier_budget > 0 && heap_budget > top_tier_budget) {
+            int scaled = static_cast<int>(
+                400.0 * std::sqrt(static_cast<double>(heap_budget) / top_tier_budget)
+            );
+            scaled = scaled / 32 * 32;
+            int frame_max = std::max(dec_ctx->width, dec_ctx->height);
+            if (scaled >= frame_max) {
+                realcugan_->tilesize = frame_max;
+            } else if (scaled > realcugan_->tilesize) {
+                realcugan_->tilesize = scaled;
+            }
+        }
+        logger()->info(
+            "Real-CUGAN tile size: {} (GPU heap budget {} MB)", realcugan_->tilesize, heap_budget
+        );
+    }
+
     return 0;
 }
 
@@ -182,8 +219,10 @@ int FilterRealcugan::filter(AVFrame* in_frame, AVFrame** out_frame) {
         return ret;
     }
 
-    // Convert ncnn::Mat to AVFrame
-    *out_frame = conversions::ncnn_mat_to_avframe(out_mat, out_pix_fmt_);
+    // Convert ncnn::Mat to AVFrame (keep the source's color matrix and range)
+    *out_frame = conversions::ncnn_mat_to_avframe(
+        out_mat, out_pix_fmt_, in_frame->colorspace, in_frame->color_range
+    );
     if (*out_frame == nullptr) {
         logger()->error("Failed to convert ncnn::Mat to AVFrame");
         return AVERROR(ENOMEM);

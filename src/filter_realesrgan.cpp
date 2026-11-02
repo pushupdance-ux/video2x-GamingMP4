@@ -1,5 +1,7 @@
 #include "filter_realesrgan.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -98,6 +100,24 @@ int FilterRealesrgan::init(AVCodecContext* dec_ctx, AVCodecContext* enc_ctx, AVB
         realesrgan_->tilesize = 32;
     }
 
+    // OPTIMIZATION: the table above caps tiles at 200 px, so a 512x448 frame is cut into
+    // 3x3 = 9 padded tiles even on a 16 GB card. Scale the tile with the available budget
+    // (memory grows with tile area) and use a single tile when the whole frame fits.
+    if (heap_budget > 1900) {
+        int scaled =
+            static_cast<int>(200.0 * std::sqrt(static_cast<double>(heap_budget) / 1900.0));
+        scaled = scaled / 32 * 32;
+        int frame_max = std::max(dec_ctx->width, dec_ctx->height);
+        if (scaled >= frame_max) {
+            realesrgan_->tilesize = frame_max;
+        } else if (scaled > realesrgan_->tilesize) {
+            realesrgan_->tilesize = scaled;
+        }
+    }
+    logger()->info(
+        "Real-ESRGAN tile size: {} (GPU heap budget {} MB)", realesrgan_->tilesize, heap_budget
+    );
+
     return 0;
 }
 
@@ -122,8 +142,10 @@ int FilterRealesrgan::filter(AVFrame* in_frame, AVFrame** out_frame) {
         return ret;
     }
 
-    // Convert ncnn::Mat to AVFrame
-    *out_frame = conversions::ncnn_mat_to_avframe(out_mat, out_pix_fmt_);
+    // Convert ncnn::Mat to AVFrame (keep the source's color matrix and range)
+    *out_frame = conversions::ncnn_mat_to_avframe(
+        out_mat, out_pix_fmt_, in_frame->colorspace, in_frame->color_range
+    );
     if (*out_frame == nullptr) {
         logger()->error("Failed to convert ncnn::Mat to AVFrame");
         return AVERROR(ENOMEM);
