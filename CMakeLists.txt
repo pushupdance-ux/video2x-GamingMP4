@@ -479,17 +479,8 @@ if(VIDEO2X_BUILD_CLI)
 
     # Install the Boost DLL
     if(WIN32 AND NOT VIDEO2X_USE_EXTERNAL_BOOST)
-        set(boost_base_path
-            "${CMAKE_BINARY_DIR}/third_party/boost/libs/program_options/${CMAKE_BUILD_TYPE}"
-        )
-
-        # Different build types have different DLL names
-        if(CMAKE_BUILD_TYPE STREQUAL Release)
-            set(boost_dll_path "${boost_base_path}/boost_program_options-vc143-mt-x64-1_86.dll")
-        else()
-            set(boost_dll_path "${boost_base_path}/boost_program_options-vc143-mt-gd-x64-1_86.dll")
-        endif()
-
-        install(FILES "${boost_dll_path}" DESTINATION "${CMAKE_INSTALL_BINDIR}")
+        # Use the DLL Boost actually built; its name encodes the MSVC toolset (vc143, vc145,
+        # ...) and build type, so a hardcoded name breaks on newer Visual Studio versions.
+        install(FILES "$<TARGET_FILE:boost_program_options>" DESTINATION "${CMAKE_INSTALL_BINDIR}")
     endif()
 endif()
