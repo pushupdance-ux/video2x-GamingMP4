@@ -183,7 +183,7 @@ int FilterRealcugan::init(AVCodecContext* dec_ctx, AVCodecContext* enc_ctx, AVBu
                 400.0 * std::sqrt(static_cast<double>(heap_budget) / top_tier_budget)
             );
             scaled = scaled / 32 * 32;
-            int frame_max = std::max(dec_ctx->width, dec_ctx->height);
+            int frame_max = (std::max)(dec_ctx->width, dec_ctx->height);
             if (scaled >= frame_max) {
                 realcugan_->tilesize = frame_max;
             } else if (scaled > realcugan_->tilesize) {

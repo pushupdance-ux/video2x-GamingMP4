@@ -107,7 +107,7 @@ int FilterRealesrgan::init(AVCodecContext* dec_ctx, AVCodecContext* enc_ctx, AVB
         int scaled =
             static_cast<int>(200.0 * std::sqrt(static_cast<double>(heap_budget) / 1900.0));
         scaled = scaled / 32 * 32;
-        int frame_max = std::max(dec_ctx->width, dec_ctx->height);
+        int frame_max = (std::max)(dec_ctx->width, dec_ctx->height);
         if (scaled >= frame_max) {
             realesrgan_->tilesize = frame_max;
         } else if (scaled > realesrgan_->tilesize) {
