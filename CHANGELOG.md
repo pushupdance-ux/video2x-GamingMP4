@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Video2X could exit with a crash code after a successful run because the ncnn GPU instance was never destroyed before exit.
 - The last frame(s) of videos with frame reordering (MPEG-2, H.264 B-frames) were dropped because the decoder was never flushed at end of file.
 - `--realcugan-syncgap` was never applied (the RealCUGAN member was left uninitialized).
 - Null pointer dereference in Real-ESRGAN, Real-CUGAN, and RIFE processors when frame conversion fails.

@@ -208,6 +208,9 @@ int main(int argc, char** argv) {
     // Join the processing thread to ensure it completes before exiting
     processing_thread.join();
 
+    // Shut down the GPU instance before exiting (prevents a crash on exit on some drivers)
+    video2x::release_gpu_resources();
+
     // Print final message based on processing result
     if (video_processor.get_state() == video2x::VideoProcessorState::Aborted) {
         video2x::logger()->warn("Video processing aborted");

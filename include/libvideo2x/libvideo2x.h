@@ -26,6 +26,11 @@ enum class VideoProcessorState {
     Completed
 };
 
+// Releases the shared Vulkan/ncnn GPU instance. ncnn requires this before the program exits;
+// without it, some drivers (notably NVIDIA on Windows) crash during process shutdown, turning a
+// successful run into a non-zero exit code. Call once, after all processing has finished.
+LIBVIDEO2X_API void release_gpu_resources();
+
 class LIBVIDEO2X_API VideoProcessor {
    public:
     VideoProcessor(

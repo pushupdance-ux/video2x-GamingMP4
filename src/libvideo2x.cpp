@@ -4,6 +4,7 @@ extern "C" {
 #include <libavutil/avutil.h>
 }
 
+#include <gpu.h>
 #include <spdlog/spdlog.h>
 
 #include "avutils.h"
@@ -472,6 +473,10 @@ int VideoProcessor::process_interpolation(
     // Update the previous frame with the current frame
     prev_frame.reset(av_frame_clone(frame));
     return ret;
+}
+
+void release_gpu_resources() {
+    ncnn::destroy_gpu_instance();
 }
 
 }  // namespace video2x
