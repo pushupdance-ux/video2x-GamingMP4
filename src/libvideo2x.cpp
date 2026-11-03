@@ -195,12 +195,80 @@ int VideoProcessor::process_frames(
         total_frames_.store(total_frames_.load() * proc_cfg_.frm_rate_mul);
     }
 
+    // Receive every frame the decoder can currently output and process it
+    auto receive_and_process_frames = [&]() -> int {
+        // Process frames decoded from the packet
+        while (state_.load() != VideoProcessorState::Aborted) {
+            // Sleep for 100 ms if processing is paused
+            if (state_.load() == VideoProcessorState::Paused) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+
+            // Receive the decoded frame from the decoder
+            ret = avcodec_receive_frame(dec_ctx, frame.get());
+            if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                // No more frames from this packet (or the decoder is fully drained)
+                return 0;
+            } else if (ret < 0) {
+                av_strerror(ret, errbuf, sizeof(errbuf));
+                logger()->critical("Error decoding video frame: {}", errbuf);
+                return ret;
+            }
+
+            // Calculate this frame's presentation timestamp (PTS)
+            if (enc_cfg_.recalculate_pts) {
+                frame->pts =
+                    av_rescale_q(frame_idx_, av_inv_q(enc_ctx->framerate), enc_ctx->time_base);
+            }
+
+            // Process the frame based on the selected processing mode
+            AVFrame* proc_frame = nullptr;
+            switch (processor->get_processing_mode()) {
+                case processors::ProcessingMode::Filter: {
+                    ret = process_filtering(processor, encoder, frame.get(), proc_frame);
+                    break;
+                }
+                case processors::ProcessingMode::Interpolate: {
+                    ret = process_interpolation(
+                        processor, encoder, prev_frame, frame.get(), proc_frame
+                    );
+                    break;
+                }
+                default:
+                    logger()->critical("Unknown processing mode");
+                    return -1;
+            }
+            if (ret < 0 && ret != AVERROR(EAGAIN)) {
+                return ret;
+            }
+            av_frame_unref(frame.get());
+            frame_idx_.fetch_add(1);
+            logger()->debug("Processed frame {}/{}", frame_idx_.load(), total_frames_.load());
+        }
+        return 0;
+    };
+
     // Read frames from the input file
     while (state_.load() != VideoProcessorState::Aborted) {
         ret = av_read_frame(ifmt_ctx, packet.get());
         if (ret < 0) {
             if (ret == AVERROR_EOF) {
                 logger()->debug("Reached end of file");
+
+                // FIX: drain the decoder. Codecs with frame reordering (e.g. MPEG-2/H.264 with
+                // B-frames) hold back the last frame(s) until they are flushed with a null
+                // packet; without this the final frame(s) of every video were dropped.
+                ret = avcodec_send_packet(dec_ctx, nullptr);
+                if (ret < 0 && ret != AVERROR_EOF) {
+                    av_strerror(ret, errbuf, sizeof(errbuf));
+                    logger()->critical("Error flushing decoder: {}", errbuf);
+                    return ret;
+                }
+                ret = receive_and_process_frames();
+                if (ret < 0) {
+                    return ret;
+                }
                 break;
             }
             av_strerror(ret, errbuf, sizeof(errbuf));
@@ -217,54 +285,9 @@ int VideoProcessor::process_frames(
                 return ret;
             }
 
-            // Process frames decoded from the packet
-            while (state_.load() != VideoProcessorState::Aborted) {
-                // Sleep for 100 ms if processing is paused
-                if (state_.load() == VideoProcessorState::Paused) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    continue;
-                }
-
-                // Receive the decoded frame from the decoder
-                ret = avcodec_receive_frame(dec_ctx, frame.get());
-                if (ret == AVERROR(EAGAIN)) {
-                    // No more frames from this packet
-                    break;
-                } else if (ret < 0) {
-                    av_strerror(ret, errbuf, sizeof(errbuf));
-                    logger()->critical("Error decoding video frame: {}", errbuf);
-                    return ret;
-                }
-
-                // Calculate this frame's presentation timestamp (PTS)
-                if (enc_cfg_.recalculate_pts) {
-                    frame->pts =
-                        av_rescale_q(frame_idx_, av_inv_q(enc_ctx->framerate), enc_ctx->time_base);
-                }
-
-                // Process the frame based on the selected processing mode
-                AVFrame* proc_frame = nullptr;
-                switch (processor->get_processing_mode()) {
-                    case processors::ProcessingMode::Filter: {
-                        ret = process_filtering(processor, encoder, frame.get(), proc_frame);
-                        break;
-                    }
-                    case processors::ProcessingMode::Interpolate: {
-                        ret = process_interpolation(
-                            processor, encoder, prev_frame, frame.get(), proc_frame
-                        );
-                        break;
-                    }
-                    default:
-                        logger()->critical("Unknown processing mode");
-                        return -1;
-                }
-                if (ret < 0 && ret != AVERROR(EAGAIN)) {
-                    return ret;
-                }
-                av_frame_unref(frame.get());
-                frame_idx_.fetch_add(1);
-                logger()->debug("Processed frame {}/{}", frame_idx_.load(), total_frames_.load());
+            ret = receive_and_process_frames();
+            if (ret < 0) {
+                return ret;
             }
         } else if ((enc_cfg_.copy_audio_streams || enc_cfg_.copy_subtitle_streams) &&
                    stream_map[packet->stream_index] >= 0) {
